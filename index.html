@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>贪吃蛇</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 16px;
+    color: #222;
+  }
+
+  /* 顶部激活提示红条 */
+  .promo-bar {
+    width: 100%;
+    background: #e53935;
+    color: #fff;
+    text-align: center;
+    padding: 8px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+
+  h1 { font-size: 22px; margin-bottom: 8px; }
+
+  .score {
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+  .score span { font-weight: 700; color: #22a84a; }
+
+  .board-wrap {
+    position: relative;
+    width: min(90vw, 400px);
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    background: #ffffff;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+  }
+
+  /* 方向按钮：默认隐藏，触屏设备显示 */
+  .controls {
+    display: none;
+    margin-top: 18px;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .controls.touch { display: flex; }
+
+  .controls .row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .controls button {
+    width: 64px;
+    height: 64px;
+    font-size: 24px;
+    border: 2px solid #22a84a;
+    background: #f0f9f2;
+    color: #22a84a;
+    border-radius: 12px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .controls button:active { background: #22a84a; color: #fff; }
+
+  /* 游戏结束遮罩 */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 8px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  .overlay.show { display: flex; }
+  .overlay p { font-size: 20px; font-weight: 700; }
+  .overlay button {
+    padding: 10px 24px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    background: #22a84a;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  /* 左下角设置按钮 */
+  .settings-btn {
+    align-self: flex-start;
+    margin-top: 12px;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    border: 2px solid #ddd;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 设置面板（暂停时弹出，全屏不透明，内容居中） */
+  .settings-panel {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+    z-index: 20;
+  }
+  .settings-panel.show { display: flex; }
+  .settings-panel h2 { font-size: 20px; margin-bottom: 4px; }
+  .settings-panel button {
+    width: 100%;
+    max-width: 280px;
+    padding: 12px 16px;
+    font-size: 15px;
+    border: 2px solid #22a84a;
+    background: #f0f9f2;
+    color: #222;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .settings-panel button.primary {
+    background: #22a84a;
+    color: #fff;
+    border-color: #22a84a;
+    margin-top: 6px;
+  }
+  .lock-tip {
+    display: none;
+    color: #e53935;
+    font-size: 14px;
+    text-align: center;
+    max-width: 280px;
+  }
+  .lock-tip.show { display: block; }
+
+  /* 设置界面：隐藏标题和得分，红条保留 */
+  body.settings-open #gameTitle,
+  body.settings-open #scoreBar { display: none; }
+  body.settings-open #controls { display: none !important; }
+  body.settings-open .settings-btn { display: none; }
+
+  /* 视图互斥显隐：三个视图统一走 class 控制 */
+  .view {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .view.show { display: flex; }
+  #settingsMenu { gap: 12px; }
+  .about-view { gap: 16px; }
+  #aboutText { font-size: 16px; text-align: center; }
+  #codeInput {
+    width: 100%;
+    max-width: 280px;
+    padding: 12px 16px;
+    font-size: 15px;
+    border: 2px solid #22a84a;
+    border-radius: 10px;
+    outline: none;
+    text-align: center;
+  }
+  #activateForm, #activateStatus {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  #activateStatus { display: none; }
+  #activateStatus.show { display: flex; }
+  .ok-icon { font-size: 48px; }
+  #activateStatus p { font-size: 16px; text-align: center; }
+</style>
+</head>
+<body>
+
+  <div class="promo-bar" id="promoBar">激活专业版，界面更纯净</div>
+  <h1 id="gameTitle">贪吃蛇(未激活)</h1>
+  <div class="score" id="scoreBar">得分：<span id="score">0</span></div>
+
+  <div class="board-wrap">
+    <canvas id="game" width="400" height="400"></canvas>
+    <div class="overlay" id="overlay">
+      <p id="overText">游戏结束</p>
+      <button id="restart">重新开始</button>
+    </div>
+    <div class="settings-panel" id="settingsPanel">
+      <div id="settingsMenu" class="view show">
+        <h2>设置</h2>
+        <button id="optPro">升级专业版</button>
+        <button id="optSpeed">小蛇速度：0.3秒/格</button>
+        <button id="optSnakeColor">小蛇颜色：绿色</button>
+        <button id="optAppleColor">苹果颜色：红色</button>
+        <button id="optAbout">关于</button>
+        <p id="lockTip" class="lock-tip"></p>
+        <button class="primary" id="resumeBtn">继续游戏</button>
+      </div>
+      <div id="aboutView" class="about-view view">
+        <h2>关于</h2>
+        <p id="aboutText"></p>
+        <button class="primary" id="aboutBack">返回</button>
+      </div>
+      <div id="activateView" class="about-view view">
+        <h2 id="activateTitle">激活专业版</h2>
+        <div id="activateForm">
+          <input id="codeInput" type="text" placeholder="请输入激活码" autocomplete="off">
+          <button class="primary" id="activateBtn">激活</button>
+        </div>
+        <div id="activateStatus">
+          <p class="ok-icon">✅</p>
+          <p>专业版已激活</p>
+          <p>有效期：<span id="expireText"></span></p>
+        </div>
+        <p id="activateTip" class="lock-tip"></p>
+        <button id="activateBack">返回</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="settings-btn" id="settingsBtn">⚙</button>
+
+  <div class="controls" id="controls">
+    <button data-dir="up">▲</button>
+    <div class="row">
+      <button data-dir="left">◀</button>
+      <button data-dir="down">▼</button>
+      <button data-dir="right">▶</button>
+    </div>
+  </div>
+
+<script>
+  const GRID = 20;                 // 20 x 20 网格
+  const MAX_SCORE = 20;            // p=0 第一局得分上限
+  const MAX_SCORE_LOW = 15;        // p=0 首次达上限后，第二局起得分上限
+  let p = 0;                       // 0=未激活（显示红条、限分）；1=已激活
+
+  // 速度档位（毫秒/格）
+  const SPEED_OPTIONS = [
+    { label: '0.5秒/格', ms: 500 },
+    { label: '0.3秒/格', ms: 300 },
+    { label: '0.2秒/格', ms: 200 }
+  ];
+  // 小蛇配色方案
+  const SNAKE_COLORS = [
+    { name: '绿色', body: '#22a84a', head: '#1b8a3d' },
+    { name: '蓝色', body: '#42a5f5', head: '#1e88e5' },
+    { name: '紫色', body: '#ab47bc', head: '#8e24aa' },
+    { name: '橙色', body: '#ff7043', head: '#e64a19' }
+  ];
+  // 苹果配色方案
+  const APPLE_COLORS = [
+    { name: '红色', color: '#e53935' },
+    { name: '橙色', color: '#ff9800' },
+    { name: '紫色', color: '#9c27b0' },
+    { name: '蓝色', color: '#3f51b5' }
+  ];
+  // 激活码：seconds 为激活秒数；permanent 为永久激活
+  const LICENSE_CODES = {
+    '255016': { seconds: 300, permanent: false },
+    '076904': { seconds: 600, permanent: false },
+    '168042': { seconds: 180, permanent: false },
+    '000569': { seconds: 100, permanent: false },
+    '847312': { seconds: Infinity, permanent: true }
+  };
+  const usedCodes = new Set();       // 已使用过的激活码，不可重复激活
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const overlay = document.getElementById('overlay');
+  const overText = document.getElementById('overText');
+  const restartBtn = document.getElementById('restart');
+  const controls = document.getElementById('controls');
+  const promoBar = document.getElementById('promoBar');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+  const optPro = document.getElementById('optPro');
+  const optSpeed = document.getElementById('optSpeed');
+  const optSnakeColor = document.getElementById('optSnakeColor');
+  const optAppleColor = document.getElementById('optAppleColor');
+  const lockTip = document.getElementById('lockTip');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const gameTitle = document.getElementById('gameTitle');
+  const scoreBar = document.getElementById('scoreBar');
+  const optAbout = document.getElementById('optAbout');
+  const settingsMenu = document.getElementById('settingsMenu');
+  const aboutView = document.getElementById('aboutView');
+  const aboutText = document.getElementById('aboutText');
+  const aboutBack = document.getElementById('aboutBack');
+  const activateView = document.getElementById('activateView');
+  const activateForm = document.getElementById('activateForm');
+  const activateStatus = document.getElementById('activateStatus');
+  const activateTitle = document.getElementById('activateTitle');
+  const activateTip = document.getElementById('activateTip');
+  const codeInput = document.getElementById('codeInput');
+  const activateBtn = document.getElementById('activateBtn');
+  const activateBack = document.getElementById('activateBack');
+  const expireText = document.getElementById('expireText');
+
+  // p=0 显示顶部红条，p=1 隐藏
+  promoBar.style.display = p === 0 ? 'block' : 'none';
+
+  // 触屏设备显示方向按钮
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    controls.classList.add('touch');
+  }
+
+  let snake, dir, dirQueue, apple, score, timer, running;
+  let limitHits = 0;               // 达到分数上限结束的局数（0=第一局20分，>=1=15分）
+  let paused = false;              // 设置面板打开时暂停
+  let speedIdx = p === 0 ? 1 : 0; // 默认速度档位：p=0 用0.3秒，p=1 用0.5秒
+  let snakeColorIdx = 0;
+  let lockTipTimer = null;         // 红字提示自动消失定时器
+  let appleColorIdx = 0;
+  let expireAt = null;             // 限时激活到期时间戳（ms）
+  let isPermanent = false;         // 是否永久激活
+  let expireTimer = null;          // 到期倒计时定时器
+  let activateTipTimer = null;     // 激活错误提示自动消失定时器
+
+  const DIRS = {
+    up:    { x: 0,  y: -1 },
+    down:  { x: 0,  y: 1 },
+    left:  { x: -1, y: 0 },
+    right: { x: 1,  y: 0 }
+  };
+
+  function getTickMs() {
+    return SPEED_OPTIONS[speedIdx].ms;
+  }
+
+  // 随机出生：位置距四边至少五格，朝向随机
+  function randomStart() {
+    const margin = 5;
+    const min = margin;
+    const max = GRID - margin - 1;
+    const dirKeys = ['up', 'down', 'left', 'right'];
+    const d = DIRS[dirKeys[Math.floor(Math.random() * dirKeys.length)]];
+    const head = {
+      x: min + Math.floor(Math.random() * (max - min + 1)),
+      y: min + Math.floor(Math.random() * (max - min + 1))
+    };
+    const body = [head];
+    for (let i = 1; i <= 2; i++) {
+      body.push({ x: head.x - d.x * i, y: head.y - d.y * i });
+    }
+    return { snake: body, dir: d };
+  }
+
+  function reset() {
+    const start = randomStart();
+    snake = start.snake;
+    dir = start.dir;
+    dirQueue = [];
+    score = 0;
+    scoreEl.textContent = score;
+    overlay.classList.remove('show');
+    settingsPanel.classList.remove('show');
+    backToMenu();
+    document.body.classList.remove('settings-open');
+    paused = false;
+    running = true;
+    spawnApple();
+    draw();
+    clearInterval(timer);
+    timer = setInterval(tick, getTickMs());
+  }
+
+  function spawnApple() {
+    // 随机生成苹果，避开蛇身
+    let pos;
+    do {
+      pos = {
+        x: Math.floor(Math.random() * GRID),
+        y: Math.floor(Math.random() * GRID)
+      };
+    } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+    apple = pos;
+  }
+
+  function setDirection(name) {
+    if (paused) return;
+    const nd = DIRS[name];
+    if (!nd) return;
+    // 以队列中最后一个方向为基准，禁止 180° 掉头
+    const last = dirQueue.length ? dirQueue[dirQueue.length - 1] : dir;
+    if (nd.x === -last.x && nd.y === -last.y) return;
+    if (nd.x === last.x && nd.y === last.y) return;
+    dirQueue.push(nd);
+  }
+
+  function tick() {
+    if (!running) return;
+
+    // 取出下一个方向
+    if (dirQueue.length) dir = dirQueue.shift();
+
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    // 撞墙判定
+    if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) {
+      return gameOver();
+    }
+    // 撞自己判定
+    if (snake.some(s => s.x === head.x && s.y === head.y)) {
+      return gameOver();
+    }
+
+    snake.unshift(head);
+
+    // 吃到苹果：加分、变长、重新生成苹果
+    if (head.x === apple.x && head.y === apple.y) {
+      score += 1;
+      scoreEl.textContent = score;
+      // p=0：第一局上限20分，首次达上限后第二局起降为15分
+      const currentLimit = limitHits === 0 ? MAX_SCORE : MAX_SCORE_LOW;
+      if (p === 0 && score >= currentLimit) {
+        limitHits += 1;
+        draw();
+        return gameOver('分数已达上限，请激活专业版');
+      }
+      spawnApple();
+    } else {
+      snake.pop();
+    }
+
+    draw();
+  }
+
+  function draw() {
+    const cell = canvas.width / GRID;
+
+    // 白色背景
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 苹果（颜色可切换）
+    ctx.fillStyle = APPLE_COLORS[appleColorIdx].color;
+    ctx.beginPath();
+    ctx.arc(
+      apple.x * cell + cell / 2,
+      apple.y * cell + cell / 2,
+      cell * 0.36,
+      0, Math.PI * 2
+    );
+    ctx.fill();
+
+    // 蛇（颜色可切换，蛇头略深）
+    const bodyColor = SNAKE_COLORS[snakeColorIdx].body;
+    const headColor = SNAKE_COLORS[snakeColorIdx].head;
+    snake.forEach((seg, i) => {
+      ctx.fillStyle = i === 0 ? headColor : bodyColor;
+      const pad = cell * 0.08;
+      roundRect(
+        seg.x * cell + pad,
+        seg.y * cell + pad,
+        cell - pad * 2,
+        cell - pad * 2,
+        cell * 0.2
+      );
+    });
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function gameOver(message) {
+    running = false;
+    clearInterval(timer);
+    settingsPanel.classList.remove('show');
+    backToMenu();
+    document.body.classList.remove('settings-open');
+    paused = false;
+    overText.textContent = message || ('游戏结束，得分：' + score);
+    overlay.classList.add('show');
+  }
+
+  // ===== 设置面板（暂停） =====
+  function refreshSettings() {
+    optPro.textContent = '升级专业版';
+    optSpeed.textContent = '小蛇速度：' + SPEED_OPTIONS[speedIdx].label;
+    optSnakeColor.textContent = '小蛇颜色：' + SNAKE_COLORS[snakeColorIdx].name;
+    optAppleColor.textContent = '苹果颜色：' + APPLE_COLORS[appleColorIdx].name;
+    gameTitle.textContent = p === 0 ? '贪吃蛇(未激活)' : '贪吃蛇';
+    optAbout.textContent = '关于';
+    aboutText.textContent = p === 0 ? '贪吃蛇1.0.0.0 专业版(未激活)' : '贪吃蛇1.0.0.0 专业版';
+    lockTip.classList.remove('show');
+    clearTimeout(lockTipTimer);
+  }
+
+  function showView(target) {
+    [settingsMenu, aboutView, activateView].forEach(v => v.classList.remove('show'));
+    target.classList.add('show');
+  }
+
+  function showAbout() { showView(aboutView); }
+
+  function showActivate() { showView(activateView); }
+
+  function backToMenu() { showView(settingsMenu); }
+
+  function openSettings() {
+    paused = true;
+    clearInterval(timer);
+    backToMenu();
+    refreshSettings();
+    document.body.classList.add('settings-open');
+    settingsPanel.classList.add('show');
+  }
+
+  function closeSettings() {
+    settingsPanel.classList.remove('show');
+    backToMenu();
+    document.body.classList.remove('settings-open');
+    paused = false;
+    if (running) {
+      clearInterval(timer);
+      timer = setInterval(tick, getTickMs());
+    }
+  }
+
+  function upgradePro() {
+    renderActivateView();
+    showActivate();
+  }
+
+  // 渲染激活视图：未激活显示输入框，已激活显示有效期
+  function renderActivateView() {
+    const active = p === 1;
+    activateForm.style.display = active ? 'none' : 'flex';
+    activateStatus.classList.toggle('show', active);
+    activateTip.classList.remove('show');
+    activateTip.textContent = '';
+    clearTimeout(activateTipTimer);
+    if (active) {
+      expireText.textContent = isPermanent
+        ? '永久'
+        : Math.max(0, Math.ceil((expireAt - Date.now()) / 1000)) + '秒';
+    }
+  }
+
+  function tickExpire() {
+    if (isPermanent || expireAt === null) return;
+    const remain = Math.ceil((expireAt - Date.now()) / 1000);
+    if (remain <= 0) {
+      expirePro();
+    } else if (activateStatus.classList.contains('show')) {
+      expireText.textContent = remain + '秒';
+    }
+  }
+
+  function startCountdown() {
+    clearInterval(expireTimer);
+    if (isPermanent) return;
+    expireTimer = setInterval(tickExpire, 1000);
+  }
+
+  // 到期：恢复默认设置、红条恢复；分数大于 20 直接提示
+  function expirePro() {
+    p = 0;
+    isPermanent = false;
+    expireAt = null;
+    clearInterval(expireTimer);
+    expireTimer = null;
+    // 强制还原为默认外观：0.3秒/格、绿色蛇、红色苹果
+    speedIdx = 1;
+    snakeColorIdx = 0;
+    appleColorIdx = 0;
+    promoBar.style.display = 'block';
+    refreshSettings();
+    renderActivateView();
+    draw();
+    if (score > MAX_SCORE) {
+      gameOver('分数已达上限，请激活专业版');
+    }
+  }
+
+  function showActivateTip(msg) {
+    activateTip.textContent = msg;
+    activateTip.classList.add('show');
+    clearTimeout(activateTipTimer);
+    activateTipTimer = setTimeout(() => {
+      activateTip.classList.remove('show');
+    }, 3000);
+  }
+
+  function doActivate() {
+    const code = codeInput.value.trim();
+    const license = LICENSE_CODES[code];
+    if (!license) {
+      showActivateTip('无法验证此激活码(0xA56)');
+      return;
+    }
+    if (usedCodes.has(code)) {
+      showActivateTip('激活码已使用');
+      return;
+    }
+    usedCodes.add(code);
+    p = 1;
+    isPermanent = license.permanent;
+    expireAt = license.permanent ? null : Date.now() + license.seconds * 1000;
+    promoBar.style.display = 'none';
+    codeInput.value = '';
+    startCountdown();
+    refreshSettings();
+    renderActivateView();
+  }
+
+  function cycleSpeed() {
+    if (p === 0) return showLockTip();
+    speedIdx = (speedIdx + 1) % SPEED_OPTIONS.length;
+    refreshSettings();
+  }
+
+  function showLockTip(msg) {
+    lockTip.textContent = msg || '该功能未激活，激活专业版获得更多功能';
+    lockTip.classList.add('show');
+    clearTimeout(lockTipTimer);
+    lockTipTimer = setTimeout(() => {
+      lockTip.classList.remove('show');
+    }, 3000);
+  }
+
+  function cycleSnakeColor() {
+    if (p === 0) return showLockTip();
+    snakeColorIdx = (snakeColorIdx + 1) % SNAKE_COLORS.length;
+    refreshSettings();
+    draw();
+  }
+
+  function cycleAppleColor() {
+    if (p === 0) return showLockTip();
+    appleColorIdx = (appleColorIdx + 1) % APPLE_COLORS.length;
+    refreshSettings();
+    draw();
+  }
+
+  // 电脑键盘：上下左右方向键
+  document.addEventListener('keydown', (e) => {
+    const map = {
+      ArrowUp: 'up', ArrowDown: 'down',
+      ArrowLeft: 'left', ArrowRight: 'right'
+    };
+    if (map[e.key]) {
+      e.preventDefault();
+      setDirection(map[e.key]);
+    }
+  });
+
+  // 手机屏幕方向按钮
+  document.querySelectorAll('.controls button').forEach(btn => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDirection(btn.dataset.dir);
+    };
+    btn.addEventListener('touchstart', handler, { passive: false });
+    btn.addEventListener('click', handler);
+  });
+
+  restartBtn.addEventListener('click', reset);
+
+  // 设置面板事件
+  settingsBtn.addEventListener('click', openSettings);
+  resumeBtn.addEventListener('click', closeSettings);
+  optPro.addEventListener('click', upgradePro);
+  optSpeed.addEventListener('click', cycleSpeed);
+  optSnakeColor.addEventListener('click', cycleSnakeColor);
+  optAppleColor.addEventListener('click', cycleAppleColor);
+  optAbout.addEventListener('click', showAbout);
+  aboutBack.addEventListener('click', backToMenu);
+  activateBtn.addEventListener('click', doActivate);
+  activateBack.addEventListener('click', backToMenu);
+  codeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doActivate();
+  });
+
+  reset();
+</script>
+
+</body>
+</html>
