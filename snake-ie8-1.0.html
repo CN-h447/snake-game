@@ -326,13 +326,13 @@ function saveProgress() {
       expireAt: expireAt,
       isPermanent: isPermanent
     };
-    localStorage.setItem('snakeProgress', JSON.stringify(data));
+    localStorage.setItem('snakeProgressIE8', JSON.stringify(data));
   } catch (e) {}
 }
 
 function loadProgress() {
   try {
-    var raw = localStorage.getItem('snakeProgress');
+    var raw = localStorage.getItem('snakeProgressIE8');
     if (!raw) return false;
     var d = JSON.parse(raw);
     if (!d || !d.snake || !d.snake.length) return false;
