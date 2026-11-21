@@ -222,6 +222,7 @@
         <button id="optAbout">关于</button>
         <p id="lockTip" class="lock-tip"></p>
         <button class="primary" id="resumeBtn">继续游戏</button>
+        <button id="optCompat">使用兼容版</button>
       </div>
       <div id="aboutView" class="about-view view">
         <h2>关于</h2>
@@ -258,8 +259,10 @@
 
 <script>
   const GRID = 20;                 // 20 x 20 网格
+  const LOGICAL_SIZE = 400;        // 画布逻辑尺寸（CSS 像素）
   const MAX_SCORE = 20;            // p=0 第一局得分上限
   const MAX_SCORE_LOW = 15;        // p=0 首次达上限后，第二局起得分上限
+  const COMPAT_PAGE_URL = 'snake-ie8-1.0.html';  // 根目录下的兼容版页面
   let p = 0;                       // 0=未激活（显示红条、限分）；1=已激活
 
   // 速度档位（毫秒/格）
@@ -290,7 +293,7 @@
     '000569': { seconds: 100, permanent: false },
     '847312': { seconds: Infinity, permanent: true }
   };
-  const usedCodes = new Set();       // 已使用过的激活码，不可重复激活
+  let usedCodes = new Set();        // 已使用过的激活码，不可重复激活
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -324,6 +327,13 @@
   const activateBtn = document.getElementById('activateBtn');
   const activateBack = document.getElementById('activateBack');
   const expireText = document.getElementById('expireText');
+  const optCompat = document.getElementById('optCompat');
+
+  // 高清屏适配：按 devicePixelRatio 放大画布，避免发虚
+  const DPR = window.devicePixelRatio || 1;
+  canvas.width = LOGICAL_SIZE * DPR;
+  canvas.height = LOGICAL_SIZE * DPR;
+  ctx.scale(DPR, DPR);
 
   // p=0 显示顶部红条，p=1 隐藏
   promoBar.style.display = p === 0 ? 'block' : 'none';
@@ -355,6 +365,64 @@
   function getTickMs() {
     return SPEED_OPTIONS[speedIdx].ms;
   }
+
+  // ===== 进度保存 / 读取（localStorage，失败时仅保留在内存） =====
+  function saveProgress() {
+    try {
+      const data = {
+        score: score, speedIdx: speedIdx, snakeColorIdx: snakeColorIdx,
+        appleColorIdx: appleColorIdx,
+        snake: snake, dir: dir, apple: apple,
+        usedCodes: Array.from(usedCodes),
+        activated: p === 1,
+        expireAt: expireAt,
+        isPermanent: isPermanent
+      };
+      localStorage.setItem('snakeProgress', JSON.stringify(data));
+    } catch (e) {}
+  }
+
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem('snakeProgress');
+      if (!raw) return false;
+      const d = JSON.parse(raw);
+      if (!d || !d.snake || !d.snake.length) return false;
+      score = d.score;
+      speedIdx = d.speedIdx;
+      snakeColorIdx = d.snakeColorIdx;
+      appleColorIdx = d.appleColorIdx;
+      limitHits = 0;
+      snake = d.snake;
+      dir = d.dir;
+      apple = d.apple;
+      usedCodes = new Set(d.usedCodes || []);
+
+      // 恢复激活状态；存档时已过期则按未激活处理
+      if (d.activated === true || d.activated === 1) {
+        if (d.isPermanent) {
+          p = 1; isPermanent = true; expireAt = null;
+        } else if (d.expireAt && d.expireAt > Date.now()) {
+          p = 1; isPermanent = false; expireAt = d.expireAt;
+        } else {
+          p = 0; isPermanent = false; expireAt = null;
+        }
+      } else {
+        p = 0; isPermanent = false; expireAt = null;
+      }
+
+      scoreEl.textContent = score;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // 判断是否所有激活码都已用完
+  function allCodesUsed() {
+    return Object.keys(LICENSE_CODES).every(k => usedCodes.has(k));
+  }
+
+  // 解除全部激活码的禁用状态
+  function resetUsedCodes() { usedCodes = new Set(); }
 
   // 随机出生：位置距四边至少五格，朝向随机
   function randomStart() {
@@ -391,28 +459,31 @@
     draw();
     clearInterval(timer);
     timer = setInterval(tick, getTickMs());
+    saveProgress();
   }
 
   function spawnApple() {
-    // 随机生成苹果，避开蛇身
-    let pos;
-    do {
-      pos = {
-        x: Math.floor(Math.random() * GRID),
-        y: Math.floor(Math.random() * GRID)
-      };
-    } while (snake.some(s => s.x === pos.x && s.y === pos.y));
-    apple = pos;
+    // 收集所有空格子，避开蛇身；棋盘占满时兜底避免死循环
+    const free = [];
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) {
+        if (!snake.some(s => s.x === x && s.y === y)) free.push({ x: x, y: y });
+      }
+    }
+    apple = free.length
+      ? free[Math.floor(Math.random() * free.length)]
+      : { x: 0, y: 0 };
   }
 
   function setDirection(name) {
-    if (paused) return;
+    if (paused || !running) return;
     const nd = DIRS[name];
     if (!nd) return;
     // 以队列中最后一个方向为基准，禁止 180° 掉头
     const last = dirQueue.length ? dirQueue[dirQueue.length - 1] : dir;
     if (nd.x === -last.x && nd.y === -last.y) return;
     if (nd.x === last.x && nd.y === last.y) return;
+    if (dirQueue.length >= 2) return;   // 队列最多排 2 个转向，防止连按积压
     dirQueue.push(nd);
   }
 
@@ -444,6 +515,7 @@
       if (p === 0 && score >= currentLimit) {
         limitHits += 1;
         draw();
+        saveProgress();
         return gameOver('分数已达上限，请激活专业版');
       }
       spawnApple();
@@ -452,14 +524,15 @@
     }
 
     draw();
+    saveProgress();
   }
 
   function draw() {
-    const cell = canvas.width / GRID;
+    const cell = LOGICAL_SIZE / GRID;
 
     // 白色背景
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
 
     // 苹果（颜色可切换）
     ctx.fillStyle = APPLE_COLORS[appleColorIdx].color;
@@ -502,12 +575,14 @@
   function gameOver(message) {
     running = false;
     clearInterval(timer);
+    dirQueue = [];
     settingsPanel.classList.remove('show');
     backToMenu();
     document.body.classList.remove('settings-open');
     paused = false;
     overText.textContent = message || ('游戏结束，得分：' + score);
     overlay.classList.add('show');
+    saveProgress();
   }
 
   // ===== 设置面板（暂停） =====
@@ -518,7 +593,7 @@
     optAppleColor.textContent = '苹果颜色：' + APPLE_COLORS[appleColorIdx].name;
     gameTitle.textContent = p === 0 ? '贪吃蛇(未激活)' : '贪吃蛇';
     optAbout.textContent = '关于';
-    aboutText.textContent = p === 0 ? '贪吃蛇1.0.0.0 专业版(未激活)' : '贪吃蛇1.0.0.0 专业版';
+    aboutText.textContent = p === 0 ? '贪吃蛇1.1.0 专业版(未激活)' : '贪吃蛇1.1.0 专业版';
     lockTip.classList.remove('show');
     clearTimeout(lockTipTimer);
   }
@@ -592,6 +667,7 @@
 
   // 到期：恢复默认设置、红条恢复；分数大于 20 直接提示
   function expirePro() {
+    saveProgress();
     p = 0;
     isPermanent = false;
     expireAt = null;
@@ -627,10 +703,16 @@
       return;
     }
     if (usedCodes.has(code)) {
+      // 全部用完后先解除所有禁用，再重新校验
+      if (allCodesUsed()) resetUsedCodes();
+    }
+    if (usedCodes.has(code)) {
       showActivateTip('激活码已使用');
       return;
     }
     usedCodes.add(code);
+    // 本轮用完最后一个码后清空禁用，下一轮所有码重新可用
+    if (allCodesUsed()) resetUsedCodes();
     p = 1;
     isPermanent = license.permanent;
     expireAt = license.permanent ? null : Date.now() + license.seconds * 1000;
@@ -639,6 +721,8 @@
     startCountdown();
     refreshSettings();
     renderActivateView();
+    saveProgress();
+    closeSettings();   // 激活成功直接进入游玩界面
   }
 
   function cycleSpeed() {
@@ -670,6 +754,9 @@
     draw();
   }
 
+  // 跳转到根目录的兼容版页面
+  function goCompatVersion() { window.location.href = COMPAT_PAGE_URL; }
+
   // 电脑键盘：上下左右方向键
   document.addEventListener('keydown', (e) => {
     const map = {
@@ -682,14 +769,21 @@
     }
   });
 
-  // 手机屏幕方向按钮
+  // 手机屏幕方向按钮：touchstart 立即响应，click 作桌面兜底，避免一次点击触发两次
   document.querySelectorAll('.controls button').forEach(btn => {
+    let touched = false;
     const handler = (e) => {
       e.preventDefault();
       setDirection(btn.dataset.dir);
     };
-    btn.addEventListener('touchstart', handler, { passive: false });
-    btn.addEventListener('click', handler);
+    btn.addEventListener('touchstart', (e) => {
+      touched = true;
+      handler(e);
+    });
+    btn.addEventListener('click', () => {
+      if (touched) { touched = false; return; }
+      handler();
+    });
   });
 
   restartBtn.addEventListener('click', reset);
@@ -705,11 +799,34 @@
   aboutBack.addEventListener('click', backToMenu);
   activateBtn.addEventListener('click', doActivate);
   activateBack.addEventListener('click', backToMenu);
+  optCompat.addEventListener('click', goCompatVersion);
   codeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') doActivate();
   });
 
-  reset();
+  // ===== 初始化 =====
+  if (loadProgress()) {
+    // 恢复上次保存的对局进度
+    dirQueue = [];
+    overlay.classList.remove('show');
+    settingsPanel.classList.remove('show');
+    backToMenu();
+    document.body.classList.remove('settings-open');
+    paused = false;
+    running = true;
+    draw();
+    clearInterval(timer);
+    timer = setInterval(tick, getTickMs());
+    if (p === 1) {
+      // 已激活：隐藏红条、刷新界面、重新挂回倒计时
+      promoBar.style.display = 'none';
+      refreshSettings();
+      startCountdown();
+    }
+  } else {
+    reset();
+  }
+  window.addEventListener('beforeunload', saveProgress);
 </script>
 
 </body>

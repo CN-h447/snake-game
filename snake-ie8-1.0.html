@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>贪吃蛇(IE8兼容版)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: #ffffff;
+    color: #222;
+    font-family: "Microsoft YaHei", Arial, sans-serif;
+    text-align: center;
+  }
+
+  h1 { font-size: 22px; margin: 0 0 8px 0; }
+  .score { font-size: 16px; margin-bottom: 12px; }
+  .score span { font-weight: 700; color: #22a84a; }
+
+  .board-wrap { position: relative; width: 90%; max-width: 400px; margin: 0 auto; }
+  #board {
+    position: relative;
+    width: 100%;
+    background: #ffffff;
+    /* 用 outline 代替 border：IE8 不支持 box-sizing，border 会把棋盘撑出 4px；outline 不占布局 */
+    outline: 2px solid #ddd;
+  }
+  .cell { position: absolute; }
+
+  /* 游戏结束遮罩 */
+  .overlay {
+    display: none;
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background: #ffffff;
+    z-index: 10;
+    padding-top: 30%;
+  }
+  .overlay.show { display: block; }
+  .overlay p { font-size: 20px; font-weight: 700; margin-bottom: 14px; }
+
+  button { font-family: inherit; }
+  .settings-panel button, #codeInput {
+    display: block;
+    width: 280px;
+    padding: 12px 16px;
+    font-size: 15px;
+    border: 2px solid #22a84a;
+    background: #f0f9f2;
+    color: #222;
+    margin: 6px auto;
+    cursor: pointer;
+    text-align: center;
+    box-sizing: border-box;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.primary { background: #22a84a; color: #fff; border-color: #22a84a; }
+
+  .lock-tip {
+    display: none;
+    color: #e53935;
+    font-size: 14px;
+    text-align: center;
+    max-width: 280px;
+    margin: 6px auto;
+  }
+
+  .settings-row { width: 90%; max-width: 400px; margin: 12px auto 0; text-align: left; }
+  .settings-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+    line-height: 38px;
+    border: 2px solid #ddd;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  /* 设置面板（全屏覆盖） */
+  .settings-panel {
+    display: none;
+    position: fixed;
+    left: 0; top: 0;
+    width: 100%;
+    height: 100%;
+    background: #fff;
+    z-index: 20;
+    padding-top: 40px;
+    overflow-y: auto;
+  }
+  .settings-panel.show { display: block; }
+  .settings-panel h2 { font-size: 20px; margin-bottom: 4px; }
+
+  .view { display: none; }
+
+  /* 触屏方向按钮 */
+  .controls { margin-top: 18px; display: none; }
+  .controls.show { display: block; }
+  .controls .row { margin-top: 10px; }
+  .controls button {
+    width: 64px;
+    height: 64px;
+    font-size: 24px;
+    border: 2px solid #22a84a;
+    background: #f0f9f2;
+    color: #22a84a;
+    margin: 0 5px;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #codeInput { text-align: center; }
+  #activateStatus { display: none; margin-top: 12px; }
+  #activateStatus.show { display: block; }
+  /* CSS 画出的对勾：L 形边框整体旋转 45° */
+  .check-icon {
+    width: 22px;
+    height: 40px;
+    margin: 0 auto 6px;
+    border-right: 5px solid #22a84a;
+    border-bottom: 5px solid #22a84a;
+    -webkit-transform: rotate(45deg);
+    transform: rotate(45deg);
+  }
+  .check-fallback { display: none; font-size: 40px; color: #22a84a; font-weight: 700; line-height: 40px; }
+  #activateStatus p { font-size: 16px; margin: 6px 0; }
+
+  /* 设置界面打开时隐藏标题、得分、方向键、设置按钮，红条保留 */
+  body.settings-open #gameTitle,
+  body.settings-open #scoreBar,
+  body.settings-open #controls,
+  body.settings-open .settings-btn { display: none; }
+</style>
+</head>
+<body>
+
+  <h1 id="gameTitle">贪吃蛇</h1>
+  <div class="score" id="scoreBar">得分：<span id="score">0</span></div>
+
+  <div class="board-wrap">
+    <div id="board"></div>
+    <div class="overlay" id="overlay">
+      <p id="overText">游戏结束</p>
+      <button id="restart" class="primary">重新开始</button>
+    </div>
+  </div>
+
+  <div class="settings-row"><button class="settings-btn" id="settingsBtn">≡</button></div>
+
+  <div class="controls" id="controls">
+    <button id="btnUp">上</button>
+    <div class="row">
+      <button id="btnLeft">左</button>
+      <button id="btnDown">下</button>
+      <button id="btnRight">右</button>
+    </div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div class="settings-panel" id="settingsPanel">
+    <div id="settingsMenu" class="view">
+      <h2>设置</h2>
+      <button id="optPro">激活软件</button>
+      <button id="optSpeed">小蛇速度：0.3秒/格</button>
+      <button id="optSnakeColor">小蛇颜色：绿色</button>
+      <button id="optAppleColor">苹果颜色：红色</button>
+      <button id="optAbout">关于</button>
+      <button class="primary" id="resumeBtn">继续游戏</button>
+    </div>
+    <div id="aboutView" class="view">
+      <h2>关于</h2>
+      <p id="aboutText"></p>
+      <button class="primary" id="aboutBack">返回</button>
+    </div>
+    <div id="activateView" class="view">
+      <h2 id="activateTitle">激活软件</h2>
+      <div id="activateForm">
+        <input id="codeInput" type="text" placeholder="请输入激活码" autocomplete="off">
+        <button class="primary" id="activateBtn">激活</button>
+        <button class="primary" id="goNormalBtn1">回到普通版</button>
+      </div>
+      <div id="activateStatus">
+        <div id="checkIcon" class="check-icon">
+          <span class="check-fallback">√</span>
+        </div>
+        <p>软件已激活</p>
+        <p>有效期：<span id="expireText"></span></p>
+      </div>
+      <p id="activateTip" class="lock-tip"></p>
+      <button id="activateBack">返回</button>
+      <button id="goNormalBtn2">回到普通版</button>
+    </div>
+  </div>
+
+<script>
+// ===== 常量与配置（ES5 写法，兼容 IE8） =====
+var GRID = 20;
+var CELL_PCT = 100 / GRID;         // 每格占棋盘百分比，随棋盘宽度自适应
+var MAX_SCORE = 20;               // p=0 第一局得分上限
+var MAX_SCORE_LOW = 15;           // 首次达上限后，第二局起得分上限
+var p = 0;                        // 0=未激活；1=已激活
+
+var SPEED_OPTIONS = [
+  { label: '0.5秒/格', ms: 500 },
+  { label: '0.3秒/格', ms: 300 },
+  { label: '0.2秒/格', ms: 200 }
+];
+
+var SNAKE_COLORS = [
+  { name: '绿色', body: '#22a84a', head: '#1b8a3d' },
+  { name: '蓝色', body: '#42a5f5', head: '#1e88e5' },
+  { name: '紫色', body: '#ab47bc', head: '#8e24aa' },
+  { name: '橙色', body: '#ff7043', head: '#e64a19' }
+];
+
+var APPLE_COLORS = [
+  { name: '红色', color: '#e53935' },
+  { name: '橙色', color: '#ff9800' },
+  { name: '紫色', color: '#9c27b0' },
+  { name: '蓝色', color: '#3f51b5' }
+];
+
+// 激活码：seconds 激活秒数（统一 600 秒）；一次性使用，用过不可再用
+var LICENSE_CODES = {
+  '255016': { seconds: 600, permanent: false },
+  '076904': { seconds: 600, permanent: false },
+  '168042': { seconds: 600, permanent: false },
+  '000569': { seconds: 600, permanent: false },
+  '847312': { seconds: 600, permanent: false }
+};
+var usedCodes = {};               // 已使用激活码（用普通对象替代 Set）
+
+// ===== DOM 引用 =====
+function $(id) { return document.getElementById(id); }
+var board = $('board');
+var scoreEl = $('score');
+var overlay = $('overlay');
+var overText = $('overText');
+var restartBtn = $('restart');
+var controls = $('controls');
+var settingsBtn = $('settingsBtn');
+var settingsPanel = $('settingsPanel');
+var optPro = $('optPro');
+var optSpeed = $('optSpeed');
+var optSnakeColor = $('optSnakeColor');
+var optAppleColor = $('optAppleColor');
+var resumeBtn = $('resumeBtn');
+var gameTitle = $('gameTitle');
+var scoreBar = $('scoreBar');
+var optAbout = $('optAbout');
+var settingsMenu = $('settingsMenu');
+var aboutView = $('aboutView');
+var aboutText = $('aboutText');
+var aboutBack = $('aboutBack');
+var activateView = $('activateView');
+var activateForm = $('activateForm');
+var activateStatus = $('activateStatus');
+var checkIcon = $('checkIcon');
+var activateTitle = $('activateTitle');
+var activateTip = $('activateTip');
+var codeInput = $('codeInput');
+var activateBtn = $('activateBtn');
+var activateBack = $('activateBack');
+var goNormalBtn1 = $('goNormalBtn1');
+var goNormalBtn2 = $('goNormalBtn2');
+var expireText = $('expireText');
+var btnUp = $('btnUp');
+var btnDown = $('btnDown');
+var btnLeft = $('btnLeft');
+var btnRight = $('btnRight');
+
+// ===== 状态变量 =====
+var snake, dir, dirQueue, apple, score, timer, running;
+var limitHits = 0;
+var paused = false;
+var speedIdx = p === 0 ? 1 : 0;
+var snakeColorIdx = 0;
+var appleColorIdx = 0;
+var expireAt = null;
+var isPermanent = false;
+var expireTimer = null;
+var activateTipTimer = null;
+
+var DIRS = {
+  up:    { x: 0,  y: -1 },
+  down:  { x: 0,  y: 1 },
+  left:  { x: -1, y: 0 },
+  right: { x: 1,  y: 0 }
+};
+
+// ===== 工具函数 =====
+function trimStr(s) { return (s || '').replace(/^\s+|\s+$/g, ''); }
+function showEl(el) { el.style.display = 'block'; }
+function hideEl(el) { el.style.display = 'none'; }
+function now() { return new Date().getTime(); }
+function fitBoard() { board.style.height = board.offsetWidth + 'px'; }
+
+// 兼容 IE8 的 class 操作（不再用字符串反复拼接，避免堆出 "show show"）
+function hasClass(el, cls) {
+  return (' ' + el.className + ' ').indexOf(' ' + cls + ' ') >= 0;
+}
+function addClass(el, cls) {
+  if (!hasClass(el, cls)) el.className = el.className + ' ' + cls;
+}
+function removeClass(el, cls) {
+  el.className = (' ' + el.className + ' ')
+    .replace(new RegExp(' ' + cls + ' ', 'g'), ' ')
+    .replace(/^\s+|\s+$/g, '');
+}
+
+// ===== 进度保存 / 读取（localStorage，失败时仅保留在内存） =====
+function saveProgress() {
+  try {
+    var data = {
+      score: score, speedIdx: speedIdx, snakeColorIdx: snakeColorIdx,
+      appleColorIdx: appleColorIdx,
+      snake: snake, dir: dir, apple: apple, usedCodes: usedCodes,
+      // 激活状态一并存档，刷新后不丢失
+      activated: p === 1,
+      expireAt: expireAt,
+      isPermanent: isPermanent
+    };
+    localStorage.setItem('snakeProgress', JSON.stringify(data));
+  } catch (e) {}
+}
+
+function loadProgress() {
+  try {
+    var raw = localStorage.getItem('snakeProgress');
+    if (!raw) return false;
+    var d = JSON.parse(raw);
+    if (!d || !d.snake || !d.snake.length) return false;
+    score = d.score;
+    speedIdx = d.speedIdx;
+    snakeColorIdx = d.snakeColorIdx;
+    appleColorIdx = d.appleColorIdx;
+    limitHits = 0;                       // 上限计数只在本次会话有效，不持久化
+    snake = d.snake;
+    dir = d.dir;
+    apple = d.apple;
+    usedCodes = d.usedCodes || {};
+
+    // 恢复激活状态；存档时已过期则按未激活处理
+    if (d.activated === true || d.activated === 1) {
+      if (d.isPermanent) {
+        p = 1;
+        isPermanent = true;
+        expireAt = null;
+      } else if (d.expireAt && d.expireAt > now()) {
+        p = 1;
+        isPermanent = false;
+        expireAt = d.expireAt;
+      } else {
+        p = 0;
+        isPermanent = false;
+        expireAt = null;
+      }
+    } else {
+      p = 0;
+      isPermanent = false;
+      expireAt = null;
+    }
+
+    scoreEl.innerHTML = score;
+    return true;
+  } catch (e) { return false; }
+}
+
+function getTickMs() { return SPEED_OPTIONS[speedIdx].ms; }
+
+// 随机出生：位置距四边至少五格，朝向随机
+function randomStart() {
+  var margin = 5;
+  var min = margin;
+  var max = GRID - margin - 1;
+  var dirKeys = ['up', 'down', 'left', 'right'];
+  var d = DIRS[dirKeys[Math.floor(Math.random() * dirKeys.length)]];
+  var head = {
+    x: min + Math.floor(Math.random() * (max - min + 1)),
+    y: min + Math.floor(Math.random() * (max - min + 1))
+  };
+  var body = [head];
+  for (var i = 1; i <= 2; i++) {
+    body.push({ x: head.x - d.x * i, y: head.y - d.y * i });
+  }
+  return { snake: body, dir: d };
+}
+
+function hitsSelf(x, y) {
+  for (var i = 0; i < snake.length; i++) {
+    if (snake[i].x === x && snake[i].y === y) return true;
+  }
+  return false;
+}
+
+function spawnApple() {
+  var pos;
+  do {
+    pos = {
+      x: Math.floor(Math.random() * GRID),
+      y: Math.floor(Math.random() * GRID)
+    };
+  } while (hitsSelf(pos.x, pos.y));
+  apple = pos;
+}
+
+function setDirection(name) {
+  if (paused) return;
+  var nd = DIRS[name];
+  if (!nd) return;
+  var last = dirQueue.length ? dirQueue[dirQueue.length - 1] : dir;
+  if (nd.x === -last.x && nd.y === -last.y) return;   // 禁止 180° 掉头
+  if (nd.x === last.x && nd.y === last.y) return;
+  if (dirQueue.length >= 2) return;                   // 队列最多排 2 个转向，防止连按积压
+  dirQueue.push(nd);
+}
+
+function tick() {
+  if (!running) return;
+
+  if (dirQueue.length) dir = dirQueue.shift();
+
+  var head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+  if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) {
+    gameOver(); return;
+  }
+  if (hitsSelf(head.x, head.y)) {
+    gameOver(); return;
+  }
+
+  snake.unshift(head);
+
+  if (head.x === apple.x && head.y === apple.y) {
+    score += 1;
+    scoreEl.innerHTML = score;
+    var limit = limitHits === 0 ? MAX_SCORE : MAX_SCORE_LOW;
+    if (p === 0 && score >= limit) {
+      limitHits += 1;
+      draw();
+      saveProgress();
+      gameOver('分数已达上限，请激活专业版');
+      return;
+    }
+    spawnApple();
+  } else {
+    snake.pop();
+  }
+
+  draw();
+  saveProgress();   // 对局过程中持续存档，刷新后回到上次局面
+}
+
+function appendCell(x, y, color) {
+  var d = document.createElement('div');
+  d.className = 'cell';
+  d.style.position = 'absolute';
+  d.style.left = (x * CELL_PCT) + '%';
+  d.style.top = (y * CELL_PCT) + '%';
+  d.style.width = CELL_PCT + '%';
+  d.style.height = CELL_PCT + '%';
+  d.style.background = color;
+  board.appendChild(d);
+}
+
+function draw() {
+  board.innerHTML = '';
+  appendCell(apple.x, apple.y, APPLE_COLORS[appleColorIdx].color);
+  for (var i = 0; i < snake.length; i++) {
+    var col = i === 0 ? SNAKE_COLORS[snakeColorIdx].head : SNAKE_COLORS[snakeColorIdx].body;
+    appendCell(snake[i].x, snake[i].y, col);
+  }
+}
+
+function gameOver(message) {
+  running = false;
+  clearInterval(timer);
+  removeClass(settingsPanel, 'show');
+  backToMenu();
+  removeClass(document.body, 'settings-open');
+  paused = false;
+  overText.innerHTML = message || ('游戏结束，得分：' + score);
+  removeClass(overlay, 'show');
+  addClass(overlay, 'show');
+  saveProgress();
+}
+
+function reset() {
+  var start = randomStart();
+  snake = start.snake;
+  dir = start.dir;
+  dirQueue = [];
+  score = 0;
+  scoreEl.innerHTML = score;
+  removeClass(overlay, 'show');
+  removeClass(settingsPanel, 'show');
+  backToMenu();
+  removeClass(document.body, 'settings-open');
+  paused = false;
+  running = true;
+  spawnApple();
+  draw();
+  clearInterval(timer);
+  timer = setInterval(tick, getTickMs());
+  saveProgress();
+  if (p === 0) { openSettings(); upgradePro(); }  // 未激活锁回激活界面
+}
+
+// ===== 设置面板与视图 =====
+function refreshSettings() {
+  optPro.innerHTML = '激活软件';
+  optSpeed.innerHTML = '小蛇速度：' + SPEED_OPTIONS[speedIdx].label;
+  optSnakeColor.innerHTML = '小蛇颜色：' + SNAKE_COLORS[snakeColorIdx].name;
+  optAppleColor.innerHTML = '苹果颜色：' + APPLE_COLORS[appleColorIdx].name;
+  gameTitle.innerHTML = '贪吃蛇';
+  optAbout.innerHTML = '关于';
+  aboutText.innerHTML = '贪吃蛇1.0.1 兼容版';
+  // 未激活时隐藏“继续游戏”，堵住从菜单绕出激活页的口子
+  resumeBtn.style.display = p === 1 ? 'block' : 'none';
+}
+
+function showView(target) {
+  hideEl(settingsMenu);
+  hideEl(aboutView);
+  hideEl(activateView);
+  showEl(target);
+}
+
+function showAbout() { showView(aboutView); }
+function showActivate() { showView(activateView); }
+function backToMenu() { showView(settingsMenu); }
+
+function openSettings() {
+  paused = true;
+  clearInterval(timer);
+  backToMenu();
+  refreshSettings();
+  addClass(document.body, 'settings-open');
+  addClass(settingsPanel, 'show');
+}
+
+function closeSettings() {
+  removeClass(settingsPanel, 'show');
+  backToMenu();
+  removeClass(document.body, 'settings-open');
+  paused = false;
+  if (running) {
+    clearInterval(timer);
+    timer = setInterval(tick, getTickMs());
+  }
+}
+
+function upgradePro() {
+  renderActivateView();
+  showActivate();
+}
+
+// ===== 激活 =====
+function renderActivateView() {
+  var active = p === 1;
+  activateForm.style.display = active ? 'none' : 'block';
+  activateStatus.style.display = active ? 'block' : 'none';
+  activateBack.style.display = active ? 'block' : 'none';  // 未激活隐藏返回，禁止退出激活界面
+  goNormalBtn2.style.display = active ? 'block' : 'none';  // 跟随返回按钮一起显示/隐藏
+  hideEl(activateTip);
+  activateTip.innerHTML = '';
+  clearTimeout(activateTipTimer);
+  if (active) {
+    expireText.innerHTML = isPermanent
+      ? '永久'
+      : Math.max(0, Math.ceil((expireAt - now()) / 1000)) + '秒';
+  }
+}
+
+function tickExpire() {
+  if (isPermanent || expireAt === null) return;
+  var remain = Math.ceil((expireAt - now()) / 1000);
+  if (remain <= 0) {
+    expirePro();
+  } else if (activateStatus.style.display === 'block') {
+    expireText.innerHTML = remain + '秒';
+  }
+}
+
+function startCountdown() {
+  clearInterval(expireTimer);
+  if (isPermanent) return;
+  expireTimer = setInterval(tickExpire, 1000);
+}
+
+// 到期：先保存所有进度，保留当前对局与设置，再跳转激活页面
+function expirePro() {
+  saveProgress();
+  p = 0;
+  isPermanent = false;
+  expireAt = null;
+  clearInterval(expireTimer);
+  expireTimer = null;
+  refreshSettings();
+  renderActivateView();
+  draw();
+  // 跳转激活页面，未激活不能使用
+  openSettings();
+  upgradePro();
+}
+
+function showActivateTip(msg) {
+  activateTip.innerHTML = msg;
+  showEl(activateTip);
+  clearTimeout(activateTipTimer);
+  activateTipTimer = setTimeout(function () { hideEl(activateTip); }, 3000);
+}
+
+// 判断是否所有激活码都已用完
+function allCodesUsed() {
+  var key;
+  for (key in LICENSE_CODES) {
+    if (!usedCodes[key]) return false;
+  }
+  return true;
+}
+
+// 解除全部激活码的禁用状态
+function resetUsedCodes() { usedCodes = {}; }
+
+// IE8 不支持 placeholder，用输入框默认文字模拟
+var PLACEHOLDER_TEXT = '请输入激活码';
+function initPlaceholder() {
+  if (!('placeholder' in codeInput)) {
+    codeInput.value = PLACEHOLDER_TEXT;
+  }
+  codeInput.onfocus = function () {
+    if (codeInput.value === PLACEHOLDER_TEXT) codeInput.value = '';
+  };
+  codeInput.onblur = function () {
+    if (trimStr(codeInput.value) === '') codeInput.value = PLACEHOLDER_TEXT;
+  };
+}
+
+function doActivate() {
+  var code = trimStr(codeInput.value);
+  if (code === PLACEHOLDER_TEXT) code = '';
+  var license = LICENSE_CODES[code];
+  if (!license) {
+    showActivateTip('无法验证此激活码(0xA56)');
+    return;
+  }
+  if (usedCodes[code]) {
+    // 全部用完后先解除所有禁用，再重新校验
+    if (allCodesUsed()) resetUsedCodes();
+  }
+  if (usedCodes[code]) {
+    showActivateTip('激活码已使用');
+    return;
+  }
+  usedCodes[code] = true;
+  // 本轮用完最后一个码后清空禁用，下一轮所有码重新可用
+  if (allCodesUsed()) resetUsedCodes();
+  p = 1;
+  isPermanent = license.permanent;
+  expireAt = license.permanent ? null : now() + license.seconds * 1000;
+  codeInput.value = '';
+  startCountdown();
+  refreshSettings();
+  renderActivateView();
+  saveProgress();
+  closeSettings();   // 激活成功直接进入游玩界面
+}
+
+// ===== 专业版专属功能 =====
+function cycleSpeed() {
+  if (p === 0) return;
+  speedIdx = (speedIdx + 1) % SPEED_OPTIONS.length;
+  refreshSettings();
+}
+
+function cycleSnakeColor() {
+  if (p === 0) return;
+  snakeColorIdx = (snakeColorIdx + 1) % SNAKE_COLORS.length;
+  refreshSettings();
+  draw();
+}
+
+function cycleAppleColor() {
+  if (p === 0) return;
+  appleColorIdx = (appleColorIdx + 1) % APPLE_COLORS.length;
+  refreshSettings();
+  draw();
+}
+
+// ===== 事件绑定（IE8 用 onclick / onkeydown，不用 addEventListener） =====
+document.onkeydown = function (e) {
+  e = e || window.event;
+  var map = { 38: 'up', 40: 'down', 37: 'left', 39: 'right' };
+  var d = map[e.keyCode];
+  if (d) {
+    if (e.preventDefault) e.preventDefault(); else e.returnValue = false;
+    setDirection(d);
+  }
+};
+
+// 方向键：touchstart 立即响应，消除移动端 click 的 300ms 延迟；click 作桌面兜底
+function bindDir(btn, dir) {
+  var touched = false;
+  var handler = function (e) {
+    if (e && e.preventDefault) e.preventDefault();
+    setDirection(dir);
+  };
+  btn.ontouchstart = function (e) {
+    touched = true;
+    handler(e);
+  };
+  btn.onclick = function () {
+    if (touched) { touched = false; return; }  // 忽略 touchstart 后合成的重复 click
+    handler();
+  };
+}
+bindDir(btnUp, 'up');
+bindDir(btnDown, 'down');
+bindDir(btnLeft, 'left');
+bindDir(btnRight, 'right');
+
+restartBtn.onclick = function () { reset(); };
+settingsBtn.onclick = function () { openSettings(); };
+resumeBtn.onclick = function () { closeSettings(); };
+optPro.onclick = function () { upgradePro(); };
+optSpeed.onclick = function () { cycleSpeed(); };
+optSnakeColor.onclick = function () { cycleSnakeColor(); };
+optAppleColor.onclick = function () { cycleAppleColor(); };
+optAbout.onclick = function () { showAbout(); };
+aboutBack.onclick = function () { backToMenu(); };
+activateBtn.onclick = function () { doActivate(); };
+activateBack.onclick = function () {
+  if (p === 0) return;  // 未激活禁止退出激活界面
+  backToMenu();
+};
+// 回到普通版：跳转到根目录的 index.html
+function goNormalVersion() { window.location.href = 'index.html'; }
+goNormalBtn1.onclick = goNormalVersion;
+goNormalBtn2.onclick = goNormalVersion;
+codeInput.onkeydown = function (e) {
+  e = e || window.event;
+  if (e.keyCode === 13) doActivate();
+};
+
+// 触屏设备显示方向按钮（IE8 桌面无此属性则隐藏）
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+  addClass(controls, 'show');
+}
+
+// ===== 初始化 =====
+initPlaceholder();
+// IE8 不支持 transform 旋转，CSS 对勾画不出来时回退成 √ 符号
+(function () {
+  var supportsTransform = (typeof checkIcon.style.transform !== 'undefined') ||
+                          (typeof checkIcon.style.msTransform !== 'undefined');
+  if (!supportsTransform) {
+    // IE8 不支持旋转：去掉 L 形边框，改显示 √ 符号
+    checkIcon.style.borderRight = 'none';
+    checkIcon.style.borderBottom = 'none';
+    checkIcon.style.width = 'auto';
+    checkIcon.style.height = 'auto';
+    checkIcon.getElementsByTagName('span')[0].style.display = 'block';
+  }
+})();
+fitBoard();
+if (loadProgress()) {
+  // 恢复上次保存的对局进度
+  dirQueue = [];
+  removeClass(overlay, 'show');
+  removeClass(settingsPanel, 'show');
+  backToMenu();
+  removeClass(document.body, 'settings-open');
+  paused = false;
+  running = true;
+  draw();
+  clearInterval(timer);
+  timer = setInterval(tick, getTickMs());
+  if (p === 1) {
+    // 已激活：刷新界面、重新挂回倒计时
+    refreshSettings();
+    startCountdown();
+  } else {
+    openSettings();
+    upgradePro();
+  }
+} else {
+  reset();   // 未激活时 reset 内部会自动锁回激活界面
+}
+window.onresize = fitBoard;
+window.onbeforeunload = saveProgress;   // 关闭页面前再存一次
+</script>
+</body>
+</html>
